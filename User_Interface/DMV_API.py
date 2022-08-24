@@ -84,7 +84,8 @@ def API_Validation():
                             vAR_order_id = vAR_batch_elp_configuration['ORDER_ID'][elp_idx]
                             vAR_sg_id = vAR_batch_elp_configuration['SG_ID'][elp_idx]
                             vAR_order_group_id = vAR_batch_elp_configuration['ORDER_GROUP_ID'][elp_idx]
-                            vAR_payload = {"CONFIGURATION":str(configuration),"MODEL":str(vAR_model),"ORDER_DATE":str(vAR_order_date),"ORDER_ID":str(vAR_order_id),"ORDER_GROUP_ID":str(vAR_order_group_id),"SG_ID":str(vAR_sg_id)}
+                            vAR_request_date = vAR_batch_elp_configuration['REQUEST_DATE'][elp_idx]
+                            vAR_payload = {"CONFIGURATION":str(configuration),"MODEL":str(vAR_model),"ORDER_DATE":str(vAR_order_date),"ORDER_ID":str(vAR_order_id),"ORDER_GROUP_ID":str(vAR_order_group_id),"SG_ID":str(vAR_sg_id),"REQUEST_DATE":str(vAR_request_date)}
                             
                             print('Payload - ',vAR_payload)
                             vAR_request = requests.post(vAR_request_url, data=json.dumps(vAR_payload),headers=vAR_headers)
@@ -208,6 +209,8 @@ def Insert_Response_to_Bigquery(vAR_df,vAR_request_id):
                 bigquery.SchemaField("CREATED_USER", bigquery.enums.SqlTypeNames.STRING,mode="REQUIRED"),
                 bigquery.SchemaField("UPDATED_DT", bigquery.enums.SqlTypeNames.DATETIME,mode="REQUIRED"),
                 bigquery.SchemaField("UPDATED_USER", bigquery.enums.SqlTypeNames.STRING,mode="REQUIRED"),
+                bigquery.SchemaField("REQUEST_DATE", bigquery.enums.SqlTypeNames.STRING,mode="REQUIRED"),
+                bigquery.SchemaField("REQUEST_ID", bigquery.enums.SqlTypeNames.INT64,mode="REQUIRED"),
     ],write_disposition="WRITE_APPEND",)
             # Load data to BQ
             job = client.load_table_from_dataframe(vAR_df, table,job_config=job_config)
