@@ -3,13 +3,13 @@ import numpy as np
 import tensorflow as tf
 from DMV_Text_Classification import ClassificationModels
 from DMV_Pattern_Denial import Pattern_Denial
-# Load Huggingface transformers
 from transformers import TFBertModel,  BertConfig, BertTokenizerFast, TFAutoModel
 from random import randint
 import time
 import json
 import gcsfs
 import h5py
+import traceback
 
 def ELP_Validation(request):
     """Responds to any HTTP request.
@@ -22,15 +22,13 @@ def ELP_Validation(request):
     """
     try:
         request_json = request.get_json()
-        if request_json and 'message' in request_json:
-            start_time = time.time()
-            vAR_result_message = ""
-            vAR_input_text = request_json['message']
-            vAR_vin = request_json["vin"]
+        start_time = time.time()
+        vAR_result_message = ""
+        vAR_input_text = request_json['CONFIGURATION']
+        vAR_error_message = PreRequestValidation(request_json)
 
-            if len(vAR_input_text)>7:
-                return {'Error Message':'ELP Configuration can not be more than 7 characters'}
-
+        
+        if len(vAR_error_message["Error Message"])==0:
             vAR_profanity_result,vAR_result_message = Profanity_Words_Check(vAR_input_text)
             if not vAR_profanity_result:
                 vAR_message_level_1 = "Level 1 Accepted"
@@ -43,50 +41,73 @@ def ELP_Validation(request):
             elif vAR_regex_result:
                 vAR_message_level_2 = "Level 2 Accepted"
 
-            if request_json['model'].upper()=='RNN':
+            if request_json['MODEL'].upper()=='RNN':
                 
                 vAR_result,vAR_result_data,vAR_result_target_sum = LSTM_Model_Result(vAR_input_text)
                 vAR_result_data = vAR_result_data.to_json(orient='records')
                 vAR_random_id = Random_Id_Generator()
                 if vAR_result_target_sum>20:
-                    vAR_message_level_3 = "Configuration Denied, Since the profanity probability exceeds the threshold"
+                    vAR_recommendation_level_3 = "Denied"
+                    vAR_reason_level_3 = "Since the profanity probability exceeds the threshold(sum of probability >20%)"
                 else:
-                    vAR_message_level_3 = "Level 3 Accepted"
+                    vAR_recommendation_level_3 = "Accepted"
+                    vAR_reason_level_3 = "Since the profanity probability less than the threshold(sum of probability <20%)"
                 vAR_response_time = round(time.time() - start_time,2)
 
                 return {"1st Level(Direct Profanity)":{"Is accepted":not vAR_profanity_result,"Message":vAR_message_level_1},
                 "2nd Level(Denied Pattern)":{"Is accepted":vAR_regex_result,"Message":vAR_message_level_2},
-                "3rd Level(Model Prediction)":{"Is accepted":vAR_result,"Message":vAR_message_level_3,"Profanity Classification":json.loads(vAR_result_data),
+                "3rd Level(Model Prediction)":{"Is accepted":vAR_result,"Recommendation":vAR_recommendation_level_3,"Reason":vAR_reason_level_3,"Profanity Classification":json.loads(vAR_result_data),
                 'Sum of all Categories':vAR_result_target_sum},
                 'Order Id':vAR_random_id,'Configuration':vAR_input_text,
-                'Response time':str(vAR_response_time)+" secs","Vehicle Id Number(VIN)":vAR_vin}
+                'Response time':str(vAR_response_time)+" secs","Error Message":vAR_error_message["Error Message"]}
 
-            elif request_json['model'].upper()=='BERT':
+            elif request_json['MODEL'].upper()=='BERT':
 
                 vAR_result,vAR_result_data,vAR_result_target_sum = BERT_Model_Result(vAR_input_text)
                 vAR_result_data = vAR_result_data.to_json(orient='records')
                 vAR_random_id = Random_Id_Generator()
                 if vAR_result_target_sum>20:
-                    vAR_message_level_3 = "Configuration Denied, Since the profanity probability exceeds the threshold"
+                    vAR_recommendation_level_3 = "Denied"
+                    vAR_reason_level_3 = "Since the profanity probability exceeds the threshold(sum of probability >20%)"
                 else:
-                    vAR_message_level_3 = "Level 3 Accepted"
+                    vAR_recommendation_level_3 = "Accepted"
+                    vAR_reason_level_3 = "Since the profanity probability less than the threshold(sum of probability <20%)"
                 vAR_response_time = round(time.time() - start_time,2)
 
                 return {"1st Level(Direct Profanity)":{"Is accepted":not vAR_profanity_result,"Message":vAR_message_level_1},
                 "2nd Level(Denied Pattern)":{"Is accepted":vAR_regex_result,"Message":vAR_message_level_2},
-                "3rd Level(Model Prediction)":{"Is accepted":vAR_result,"Message":vAR_message_level_3,"Profanity Classification":json.loads(vAR_result_data),
+                "3rd Level(Model Prediction)":{"Is accepted":vAR_result,"Recommendation":vAR_recommendation_level_3,"Reason":vAR_reason_level_3,"Profanity Classification":json.loads(vAR_result_data),
                 'Sum of all Categories':vAR_result_target_sum},
                 'Order Id':vAR_random_id,'Configuration':vAR_input_text,
-                'Response time':str(vAR_response_time)+" secs","Vehicle Id Number(VIN)":vAR_vin}
-            else:
-                return {'Error Message': 'Not a Valid Request(Please check your model name)'}
-        
+                'Response time':str(vAR_response_time)+" secs","Error Message":vAR_error_message["Error Message"]}
+
         else:
-            return {'Error Message': 'Not a Valid Request(Please check your input configuration)'}
+            return vAR_error_message
+
     except BaseException as e:
         print('In Error Block - '+str(e))
-        return {'Error Message':str(e)}
+        print('Error Traceback - '+str(traceback.print_exc()))
+        return {'Error Message':'### '+str(e)}
 
+
+
+def PreRequestValidation(request_json):
+    vAR_error_message = ""
+
+    if 'CONFIGURATION' not in request_json or len(request_json['CONFIGURATION'])==0 or request_json['CONFIGURATION']=='nan':
+        vAR_error_message =vAR_error_message+ "### Mandatory Parameter CONFIGURATION is missing"
+    if 'SG_ID' not in request_json or len(request_json["SG_ID"])==0 or request_json['SG_ID']=='nan':
+        vAR_error_message =vAR_error_message+ "### Mandatory Parameter Simply Gov Id is missing"
+    if 'ORDER_GROUP_ID' not in request_json or len(request_json["ORDER_GROUP_ID"])==0 or request_json['ORDER_GROUP_ID']=='nan':
+        vAR_error_message =vAR_error_message+ "### Mandatory Parameter ORDER_GROUP_ID is missing"
+    if 'ORDER_ID' not in request_json or len(request_json["ORDER_ID"])==0 or request_json['ORDER_ID']=='nan':
+        vAR_error_message = vAR_error_message+"### Mandatory Parameter ORDER_ID is missing"
+    if 'ORDER_DATE' not in request_json or len(request_json["ORDER_DATE"])==0 or request_json['ORDER_DATE']=='nan':
+        vAR_error_message = vAR_error_message+"### Mandatory Parameter ORDER_DATE is missing"
+
+    if len(request_json['CONFIGURATION'])>7:
+        vAR_error_message = vAR_error_message+"### ELP Configuration can not be more than 7 characters"
+    return {'Error Message':vAR_error_message}
 
 
 def Random_Id_Generator():
@@ -115,7 +136,7 @@ def LSTM_Model_Result(vAR_input_text):
     print('var X - ',vAR_X)
     print('var Y - ',vAR_y)
     
-    vAR_load_model = tf.keras.models.load_model('gs://dsai_saved_models/LSTM/LSTM_RNN_Model')
+    vAR_load_model = tf.keras.models.load_model('gs://dmv_elp_project/saved_model/LSTM/LSTM_RNN_Model')
 
     vAR_model_result = vAR_load_model.predict(vAR_X)
     print('LSTM result - ',vAR_model_result)
@@ -169,7 +190,7 @@ def BERT_Model_Result(vAR_input_text):
     # print('Copying Model')
     # subprocess.call(["gsutil cp gs://dsai_saved_models/BERT/model.h5 /tmp/"],shell=True)
     # print('Model File successfully copied')  
-    MODEL_PATH = 'gs://dsai_saved_models/BERT/model.h5'
+    MODEL_PATH = 'gs://dmv_elp_project/saved_model/BERT/model.h5'
     # MODEL_PATH = 'gs://dsai_saved_models/BERT/BERT_MODEL_64B_4e5LR_3E'
     FS = gcsfs.GCSFileSystem()
     with FS.open(MODEL_PATH, 'rb') as model_file:
@@ -251,7 +272,7 @@ def Binary_Search(data, x):
 
 def Profanity_Words_Check(vAR_val):
     vAR_input = vAR_val
-    vAR_badwords_df = pd.read_csv('gs://dsai_saved_models/badwords_list.csv',header=None)
+    vAR_badwords_df = pd.read_csv('gs://dmv_elp_project/data/badwords_list.csv',header=None)
     print('data - ',vAR_badwords_df.head(20))
     vAR_result_message = ""
     
