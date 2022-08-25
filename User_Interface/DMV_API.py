@@ -108,7 +108,7 @@ def API_Validation():
                 # save response into gcs
                 Upload_Response_GCS(vAR_output)
                 
-                vAR_request_id = randint(10001, 50000)
+                vAR_request_id = int(GetLastRequestId())+1
                 
                 # Bigquey table insert
                 Insert_Response_to_Bigquery(vAR_output_copy,vAR_request_id)
@@ -281,3 +281,20 @@ def Process_API_Response(vAR_api_response,vAR_request_date,vAR_order_date,vAR_co
         vAR_data['ORDER_GROUP_ID'] = vAR_order_group_id
         vAR_data['ERROR_MESSAGE'] = vAR_error_message
     return vAR_data
+
+
+def GetLastRequestId():
+    vAR_last_request_id = 0
+    vAR_client = bigquery.Client()
+    vAR_query_job = vAR_client.query(
+        """
+       select REQUEST_ID from(
+SELECT distinct REQUEST_ID,UPDATED_DT FROM `elp-2022-352222.DMV_ELP.DMV_ELP_MLOPS_RESPONSE` 
+order by UPDATED_DT desc limit 1)"""
+    )
+
+    vAR_results = vAR_query_job.result()  # Waits for job to complete.
+    print('Last Request Id - ',vAR_results)
+    for row in vAR_results:
+        vAR_last_request_id = row.get('REQUEST_ID')
+    return vAR_last_request_id
